@@ -187,13 +187,19 @@ fn main() -> Result<()> {
         }
     }
 
+    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
+    env.insert(
+        "KRUN_SERVER_PORT".to_owned(),
+        options.server_port.to_string(),
+    );
+
     {
         let passt_fd: OwnedFd = if let Some(passt_socket) = options.passt_socket {
             connect_to_passt(passt_socket)
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(options.server_port)
+            start_passt(options.server_port, &mut env)
                 .context("Failed to start `passt`")?
                 .into()
         };
@@ -330,11 +336,6 @@ fn main() -> Result<()> {
         vec
     };
 
-    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
-    env.insert(
-        "KRUN_SERVER_PORT".to_owned(),
-        options.server_port.to_string(),
-    );
     let env: Vec<CString> = {
         let mut vec = Vec::with_capacity(env.len());
         for (key, value) in env {

@@ -42,7 +42,12 @@ fn main() -> Result<()> {
 
     setup_fex()?;
 
-    configure_network()?;
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        if let Err(err) = configure_network().await {
+            eprintln!("Failed to configure network, continuing without it: {err}");
+        }
+    });
 
     if let Some(hidpipe_client_path) = find_in_path("hidpipe-client")? {
         Command::new(hidpipe_client_path)
