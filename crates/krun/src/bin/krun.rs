@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use krun::cli_options::options;
 use krun::cpu::{get_fallback_cores, get_performance_cores};
 use krun::env::{find_krun_exec, prepare_env_vars};
-use krun::launch::{launch_or_lock, LaunchResult};
+use krun::launch::{DYNAMIC_PORT_RANGE, launch_or_lock, LaunchResult};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
@@ -72,6 +72,7 @@ fn main() -> Result<()> {
         options.command,
         options.command_args,
         options.env,
+        options.interactive,
     )? {
         LaunchResult::LaunchRequested => {
             // There was a krun instance already running and we've requested it
@@ -239,6 +240,7 @@ fn main() -> Result<()> {
                 return Err(err).context("Failed to configure vsock for pulse socket");
             }
         }
+
         let hidpipe_path = Path::new(&run_path).join("hidpipe");
         if hidpipe_path.exists() {
             let hidpipe_path = CString::new(
@@ -252,6 +254,25 @@ fn main() -> Result<()> {
             if err < 0 {
                 let err = Errno::from_raw_os_error(-err);
                 return Err(err).context("Failed to configure vsock for hidpipe socket");
+            }
+        }
+
+        let socket_dir = Path::new(&run_path).join("krun/socket");
+        std::fs::create_dir_all(&socket_dir)?;
+        // Dynamic ports: Applications may listen on these sockets as neeeded.
+        for port in DYNAMIC_PORT_RANGE {
+            let socket_path = socket_dir.join(format!("port-{}", port));
+            let socket_path = CString::new(
+                socket_path
+                    .to_str()
+                    .expect("socket_path should not contain invalid UTF-8"),
+            )
+            .context("Failed to process dynamic socket path as it contains NUL character")?;
+            // SAFETY: `socket_path` is a pointer to a `CString` with long enough lifetime.
+            let err = unsafe { krun_add_vsock_port(ctx_id, port, socket_path.as_ptr()) };
+            if err < 0 {
+                let err = Errno::from_raw_os_error(-err);
+                return Err(err).context("Failed to configure vsock for dynamic socket");
             }
         }
     }
